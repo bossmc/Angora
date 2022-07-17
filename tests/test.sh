@@ -45,9 +45,9 @@ rm -f ${target}.fast ${target}.cmp ${target}.taint
 # export ANGORA_CUSTOM_FN_CONTEXT=0
 
 bin_dir=../bin/
-ANGORA_USE_ASAN=1 USE_FAST=1 ${bin_dir}/angora-clang ${target}.c -lz -o ${target}.fast
-USE_TRACK=1 ${bin_dir}/angora-clang ${target}.c -lz -o ${target}.taint
-# USE_PIN=1 ${bin_dir}/angora-clang ${target}.c -lz -o ${target}.pin
+ANGORA_USE_ASAN=1 USE_FAST=1 ${bin_dir}/angora-clang ${target}.c -lz -o ${target}.fast -flegacy-pass-manager
+USE_TRACK=1 ${bin_dir}/angora-clang ${target}.c -lz -o ${target}.taint -flegacy-pass-manager
+# USE_PIN=1 ${bin_dir}/angora-clang ${target}.c -lz -o ${target}.pin -flegacy-pass-manager
 #LLVM_COMPILER=clang wllvm -O0 -g ${target}.c -lz -o ${target}
 #extract-bc ${target}
 #opt -load ../bin/unfold-branch-pass.so -unfold_branch_pass < ${target}.bc > ${target}2.bc

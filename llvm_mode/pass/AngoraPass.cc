@@ -7,6 +7,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/Statistic.h"
 #include "llvm/Analysis/ValueTracking.h"
+#include "llvm/IR/AbstractCallSite.h"
 #include "llvm/IR/DebugInfo.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/Function.h"
@@ -17,6 +18,7 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Debug.h"
 #include "llvm/Support/raw_ostream.h"
+#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Transforms/IPO/PassManagerBuilder.h"
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/ModuleUtils.h"
@@ -262,7 +264,7 @@ void AngoraLLVMPass::initVariables(Module &M) {
                          GlobalVariable::GeneralDynamicTLSModel, 0, false);
 
   if (FastMode) {
-    AngoraMapPtr = new GlobalVariable(M, PointerType::get(Int8Ty, 0), false,
+    AngoraMapPtr = new GlobalVariable(M, Int8PtrTy, false,
                                       GlobalValue::ExternalLinkage, 0,
                                       "__angora_area_ptr");
 
@@ -349,23 +351,23 @@ void AngoraLLVMPass::countEdge(Module &M, BasicBlock &BB) {
   BasicBlock::iterator IP = BB.getFirstInsertionPt();
   IRBuilder<> IRB(&(*IP));
 
-  LoadInst *PrevLoc = IRB.CreateLoad(AngoraPrevLoc);
+  LoadInst *PrevLoc = IRB.CreateLoad(Int32Ty, AngoraPrevLoc);
   setInsNonSan(PrevLoc);
 
   Value *PrevLocCasted = IRB.CreateZExt(PrevLoc, Int32Ty);
   setValueNonSan(PrevLocCasted);
 
   // Get Map[idx]
-  LoadInst *MapPtr = IRB.CreateLoad(AngoraMapPtr);
+  LoadInst *MapPtr = IRB.CreateLoad(Int8PtrTy, AngoraMapPtr);
   setInsNonSan(MapPtr);
 
   Value *BrId = IRB.CreateXor(PrevLocCasted, CurLoc);
   setValueNonSan(BrId);
-  Value *MapPtrIdx = IRB.CreateGEP(MapPtr, BrId);
+  Value *MapPtrIdx = IRB.CreateGEP(Int8PtrTy, MapPtr, BrId);
   setValueNonSan(MapPtrIdx);
 
   // Increase 1 : IncRet <- Map[idx] + 1
-  LoadInst *Counter = IRB.CreateLoad(MapPtrIdx);
+  LoadInst *Counter = IRB.CreateLoad(Int8Ty, MapPtrIdx);
   setInsNonSan(Counter);
 
   // Implementation of saturating counter.
@@ -397,7 +399,7 @@ void AngoraLLVMPass::countEdge(Module &M, BasicBlock &BB) {
   Value *NewPrevLoc = NULL;
   if (num_fn_ctx != 0) { // Call-based context
     // Load ctx
-    LoadInst *CtxVal = IRB.CreateLoad(AngoraContext);
+    LoadInst *CtxVal = IRB.CreateLoad(Int32Ty, AngoraContext);
     setInsNonSan(CtxVal);
 
     Value *CtxValCasted = IRB.CreateZExt(CtxVal, Int32Ty);
@@ -424,10 +426,10 @@ void AngoraLLVMPass::addFnWrap(Function &F) {
   Instruction *InsertPoint = &(*(BB->getFirstInsertionPt()));
   IRBuilder<> IRB(InsertPoint);
 
-  Value *CallSite = IRB.CreateLoad(AngoraCallSite);
+  Value *CallSite = IRB.CreateLoad(Int32Ty, AngoraCallSite);
   setValueNonSan(CallSite);
 
-  Value *OriCtxVal = IRB.CreateLoad(AngoraContext);
+  Value *OriCtxVal = IRB.CreateLoad(Int32Ty, AngoraContext);
   setValueNonSan(OriCtxVal);
 
   // ***** Add Context *****
@@ -532,14 +534,14 @@ void AngoraLLVMPass::visitCompareFunc(Instruction *Inst) {
   }
 
   Value *ArgSize = nullptr;
-  if (Caller->getNumArgOperands() > 2) {
+  if (Caller->arg_size() > 2) {
     ArgSize = Caller->getArgOperand(2); // int32ty
   } else {
     ArgSize = ConstantInt::get(Int32Ty, 0);
   }
 
   IRBuilder<> IRB(Inst);
-  LoadInst *CurCtx = IRB.CreateLoad(AngoraContext);
+  LoadInst *CurCtx = IRB.CreateLoad(Int32Ty, AngoraContext);
   setInsNonSan(CurCtx);
   CallInst *ProxyCall =
       IRB.CreateCall(TraceFnTT, {Cid, CurCtx, ArgSize, OpArg[0], OpArg[1]});
@@ -596,13 +598,13 @@ void AngoraLLVMPass::processCmp(Instruction *Cond, Constant *Cid,
     OpArg[1] = castArgType(IRB, OpArg[1]);
     Value *CondExt = IRB.CreateZExt(Cond, Int32Ty);
     setValueNonSan(CondExt);
-    LoadInst *CurCtx = IRB.CreateLoad(AngoraContext);
+    LoadInst *CurCtx = IRB.CreateLoad(Int32Ty, AngoraContext);
     setInsNonSan(CurCtx);
     CallInst *ProxyCall =
         IRB.CreateCall(TraceCmp, {CondExt, Cid, CurCtx, OpArg[0], OpArg[1]});
     setInsNonSan(ProxyCall);
     */
-    LoadInst *CurCid = IRB.CreateLoad(AngoraCondId);
+    LoadInst *CurCid = IRB.CreateLoad(Int32Ty, AngoraCondId);
     setInsNonSan(CurCid);
     Value *CmpEq = IRB.CreateICmpEQ(Cid, CurCid);
     setValueNonSan(CmpEq);
@@ -616,7 +618,7 @@ void AngoraLLVMPass::processCmp(Instruction *Cond, Constant *Cid,
     OpArg[1] = castArgType(ThenB, OpArg[1]);
     Value *CondExt = ThenB.CreateZExt(Cond, Int32Ty);
     setValueNonSan(CondExt);
-    LoadInst *CurCtx = ThenB.CreateLoad(AngoraContext);
+    LoadInst *CurCtx = ThenB.CreateLoad(Int32Ty, AngoraContext);
     setInsNonSan(CurCtx);
     CallInst *ProxyCall =
         ThenB.CreateCall(TraceCmp, {CondExt, Cid, CurCtx, OpArg[0], OpArg[1]});
@@ -634,7 +636,7 @@ void AngoraLLVMPass::processCmp(Instruction *Cond, Constant *Cid,
     setValueNonSan(CondExt);
     OpArg[0] = castArgType(IRB, OpArg[0]);
     OpArg[1] = castArgType(IRB, OpArg[1]);
-    LoadInst *CurCtx = IRB.CreateLoad(AngoraContext);
+    LoadInst *CurCtx = IRB.CreateLoad(Int32Ty, AngoraContext);
     setInsNonSan(CurCtx);
     CallInst *ProxyCall =
         IRB.CreateCall(TraceCmpTT, {Cid, CurCtx, SizeArg, TypeArg, OpArg[0],
@@ -652,7 +654,7 @@ void AngoraLLVMPass::processBoolCmp(Value *Cond, Constant *Cid,
   OpArg[1] = ConstantInt::get(Int64Ty, 1);
   IRBuilder<> IRB(InsertPoint);
   if (FastMode) {
-    LoadInst *CurCid = IRB.CreateLoad(AngoraCondId);
+    LoadInst *CurCid = IRB.CreateLoad(Int32Ty, AngoraCondId);
     setInsNonSan(CurCid);
     Value *CmpEq = IRB.CreateICmpEQ(Cid, CurCid);
     setValueNonSan(CmpEq);
@@ -664,7 +666,7 @@ void AngoraLLVMPass::processBoolCmp(Value *Cond, Constant *Cid,
     setValueNonSan(CondExt);
     OpArg[0] = ThenB.CreateZExt(CondExt, Int64Ty);
     setValueNonSan(OpArg[0]);
-    LoadInst *CurCtx = ThenB.CreateLoad(AngoraContext);
+    LoadInst *CurCtx = ThenB.CreateLoad(Int32Ty, AngoraContext);
     setInsNonSan(CurCtx);
     CallInst *ProxyCall =
         ThenB.CreateCall(TraceCmp, {CondExt, Cid, CurCtx, OpArg[0], OpArg[1]});
@@ -676,7 +678,7 @@ void AngoraLLVMPass::processBoolCmp(Value *Cond, Constant *Cid,
     setValueNonSan(CondExt);
     OpArg[0] = IRB.CreateZExt(CondExt, Int64Ty);
     setValueNonSan(OpArg[0]);
-    LoadInst *CurCtx = IRB.CreateLoad(AngoraContext);
+    LoadInst *CurCtx = IRB.CreateLoad(Int32Ty, AngoraContext);
     setInsNonSan(CurCtx);
     CallInst *ProxyCall =
         IRB.CreateCall(TraceCmpTT, {Cid, CurCtx, SizeArg, TypeArg, OpArg[0],
@@ -725,7 +727,7 @@ void AngoraLLVMPass::visitSwitchInst(Module &M, Instruction *Inst) {
   IRBuilder<> IRB(Sw);
 
   if (FastMode) {
-    LoadInst *CurCid = IRB.CreateLoad(AngoraCondId);
+    LoadInst *CurCid = IRB.CreateLoad(Int32Ty, AngoraCondId);
     setInsNonSan(CurCid);
     Value *CmpEq = IRB.CreateICmpEQ(Cid, CurCid);
     setValueNonSan(CmpEq);
@@ -735,7 +737,7 @@ void AngoraLLVMPass::visitSwitchInst(Module &M, Instruction *Inst) {
     IRBuilder<> ThenB(BI);
     Value *CondExt = ThenB.CreateZExt(Cond, Int64Ty);
     setValueNonSan(CondExt);
-    LoadInst *CurCtx = ThenB.CreateLoad(AngoraContext);
+    LoadInst *CurCtx = ThenB.CreateLoad(Int32Ty, AngoraContext);
     setInsNonSan(CurCtx);
     CallInst *ProxyCall = ThenB.CreateCall(TraceSw, {Cid, CurCtx, CondExt});
     setInsNonSan(ProxyCall);
@@ -759,7 +761,7 @@ void AngoraLLVMPass::visitSwitchInst(Module &M, Instruction *Inst) {
     setValueNonSan(ArrPtr);
     Value *CondExt = IRB.CreateZExt(Cond, Int64Ty);
     setValueNonSan(CondExt);
-    LoadInst *CurCtx = IRB.CreateLoad(AngoraContext);
+    LoadInst *CurCtx = IRB.CreateLoad(Int32Ty, AngoraContext);
     setInsNonSan(CurCtx);
     CallInst *ProxyCall = IRB.CreateCall(
         TraceSwTT, {Cid, CurCtx, SizeArg, CondExt, SwNum, ArrPtr});
@@ -775,7 +777,7 @@ void AngoraLLVMPass::visitExploitation(Instruction *Inst) {
   CallInst *Caller = dyn_cast<CallInst>(Inst);
 
   if (Caller) {
-    numParams = Caller->getNumArgOperands();
+    numParams = Caller->arg_size();
   }
 
   Value *TypeArg =
@@ -805,7 +807,7 @@ void AngoraLLVMPass::visitExploitation(Instruction *Inst) {
           Value *SizeArg = ConstantInt::get(Int32Ty, size);
 
           if (TrackMode) {
-            LoadInst *CurCtx = IRB.CreateLoad(AngoraContext);
+            LoadInst *CurCtx = IRB.CreateLoad(Int32Ty, AngoraContext);
             setInsNonSan(CurCtx);
             CallInst *ProxyCall = IRB.CreateCall(
                 TraceExploitTT, {Cid, CurCtx, SizeArg, TypeArg, ParamVal});

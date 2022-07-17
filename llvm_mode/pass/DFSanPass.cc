@@ -278,18 +278,18 @@ TransformFunctionAttributes(const TransformedFunction &TransformedFunction,
   for (unsigned i = 0, ie = TransformedFunction.ArgumentIndexMapping.size();
        i < ie; ++i) {
     unsigned TransformedIndex = TransformedFunction.ArgumentIndexMapping[i];
-    ArgumentAttributes[TransformedIndex] = CallSiteAttrs.getParamAttributes(i);
+    ArgumentAttributes[TransformedIndex] = CallSiteAttrs.getParamAttrs(i);
   }
 
   // Copy annotations on varargs arguments.
   for (unsigned i = TransformedFunction.OriginalType->getNumParams(),
                 ie = CallSiteAttrs.getNumAttrSets();
        i < ie; ++i) {
-    ArgumentAttributes.push_back(CallSiteAttrs.getParamAttributes(i));
+    ArgumentAttributes.push_back(CallSiteAttrs.getParamAttrs(i));
   }
 
-  return AttributeList::get(Ctx, CallSiteAttrs.getFnAttributes(),
-                            CallSiteAttrs.getRetAttributes(),
+  return AttributeList::get(Ctx, CallSiteAttrs.getFnAttrs(),
+                            CallSiteAttrs.getRetAttrs(),
                             llvm::makeArrayRef(ArgumentAttributes));
 }
 
@@ -386,7 +386,7 @@ class DataFlowSanitizer : public ModulePass {
   MDNode *ColdCallWeights;
   DFSanABIList ABIList;
   DenseMap<Value *, Function *> UnwrappedFnMap;
-  AttrBuilder ReadOnlyNoneAttrs;
+  AttributeSet ReadOnlyNoneAttrs;
   bool DFSanRuntimeShadowMask = false;
 
   Value *getShadowAddress(Value *Addr, Instruction *Pos);
@@ -567,7 +567,7 @@ TransformedFunction DataFlowSanitizer::getCustomFunctionType(FunctionType *T) {
     FunctionType *FT;
     if (isa<PointerType>(param_type) &&
         (FT = dyn_cast<FunctionType>(
-             cast<PointerType>(param_type)->getElementType()))) {
+             cast<PointerType>(param_type)->getPointerElementType()))) {
       ArgumentIndexMapping.push_back(ArgTypes.size());
       ArgTypes.push_back(getTrampolineFunctionType(FT)->getPointerTo());
       ArgTypes.push_back(Type::getInt8PtrTy(*Ctx));
@@ -717,9 +717,7 @@ DataFlowSanitizer::buildWrapperFunction(Function *F, StringRef NewFName,
   Function *NewF = Function::Create(NewFT, NewFLink, F->getAddressSpace(),
                                     NewFName, F->getParent());
   NewF->copyAttributesFrom(F);
-  NewF->removeAttributes(
-      AttributeList::ReturnIndex,
-      AttributeFuncs::typeIncompatible(NewFT->getReturnType()));
+  NewF->removeRetAttrs(AttributeFuncs::typeIncompatible(NewFT->getReturnType()));
 
   BasicBlock *BB = BasicBlock::Create(*Ctx, "entry", NewF);
   if (F->isVarArg()) {
@@ -729,8 +727,7 @@ DataFlowSanitizer::buildWrapperFunction(Function *F, StringRef NewFName,
     // LLVM.
   }
   if (F->isVarArg() && getWrapperKind(F) != WK_Discard) {
-    NewF->removeAttributes(AttributeList::FunctionIndex,
-                           AttrBuilder().addAttribute("split-stack"));
+    NewF->removeFnAttr("split-stack");
     CallInst::Create(DFSanVarargWrapperFn,
                      IRBuilder<>(BB).CreateGlobalStringPtr(F->getName()), "",
                      BB);
@@ -788,11 +785,11 @@ Constant *DataFlowSanitizer::getOrBuildTrampolineFunction(FunctionType *FT,
 void DataFlowSanitizer::initializeRuntimeFunctions(Module &M) {
   {
     AttributeList AL;
-    AL = AL.addAttribute(M.getContext(), AttributeList::FunctionIndex,
+    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
                          Attribute::NoUnwind);
-    // AL = AL.addAttribute(M.getContext(), AttributeList::FunctionIndex,
+    // AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
     //                      Attribute::ReadNone);
-    AL = AL.addAttribute(M.getContext(), AttributeList::ReturnIndex,
+    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::ReturnIndex,
                          Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 0, Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 1, Attribute::ZExt);
@@ -801,11 +798,11 @@ void DataFlowSanitizer::initializeRuntimeFunctions(Module &M) {
   }
   {
     AttributeList AL;
-    AL = AL.addAttribute(M.getContext(), AttributeList::FunctionIndex,
+    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
                          Attribute::NoUnwind);
-    // AL = AL.addAttribute(M.getContext(), AttributeList::FunctionIndex,
+    // AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
     //                     Attribute::ReadNone);
-    AL = AL.addAttribute(M.getContext(), AttributeList::ReturnIndex,
+    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::ReturnIndex,
                          Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 0, Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 1, Attribute::ZExt);
@@ -814,11 +811,11 @@ void DataFlowSanitizer::initializeRuntimeFunctions(Module &M) {
   }
   {
     AttributeList AL;
-    AL = AL.addAttribute(M.getContext(), AttributeList::FunctionIndex,
+    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
                          Attribute::NoUnwind);
-    // AL = AL.addAttribute(M.getContext(), AttributeList::FunctionIndex,
+    // AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
     //                      Attribute::ReadOnly);
-    AL = AL.addAttribute(M.getContext(), AttributeList::ReturnIndex,
+    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::ReturnIndex,
                          Attribute::ZExt);
     DFSanUnionLoadFn =
         Mod->getOrInsertFunction("__dfsan_union_load", DFSanUnionLoadFnTy, AL);
@@ -882,7 +879,7 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
   initializeRuntimeFunctions(M);
   {
     AttributeList AL;
-    AL = AL.addAttribute(M.getContext(), AttributeList::FunctionIndex,
+    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
                          Attribute::NoUnwind);
     AL = AL.addParamAttribute(M.getContext(), 0, Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 1, Attribute::ZExt);
@@ -892,7 +889,7 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
   // find & ops.
   {
     AttributeList AL;
-    AL = AL.addAttribute(M.getContext(), AttributeList::FunctionIndex,
+    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
                          Attribute::NoUnwind);
     // AL = AL.addParamAttribute(M.getContext(), 0, Attribute::ZExt);
     DFSanCombineAndFn = Mod->getOrInsertFunction("dfsan_combine_and_ins",
@@ -900,7 +897,7 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
   }
   {
     AttributeList AL;
-    AL = AL.addAttribute(M.getContext(), AttributeList::FunctionIndex,
+    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
                          Attribute::NoUnwind);
     AL = AL.addParamAttribute(M.getContext(), 0, Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 1, Attribute::ZExt);
@@ -936,7 +933,7 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
     ++i;
     // Don't stop on weak.  We assume people aren't playing games with the
     // instrumentedness of overridden weak aliases.
-    if (auto F = dyn_cast<Function>(GA->getBaseObject())) {
+    if (auto F = dyn_cast<Function>(GA->getAliaseeObject())) {
       bool GAInst = isInstrumented(GA), FInst = isInstrumented(F);
       if (GAInst && FInst) {
         addGlobalNamePrefix(GA);
@@ -954,8 +951,8 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
     }
   }
 
-  ReadOnlyNoneAttrs.addAttribute(Attribute::ReadOnly)
-      .addAttribute(Attribute::ReadNone);
+  ReadOnlyNoneAttrs = ReadOnlyNoneAttrs.addAttribute(*Ctx, Attribute::ReadOnly);
+  ReadOnlyNoneAttrs = ReadOnlyNoneAttrs.addAttribute(*Ctx, Attribute::ReadNone);
 
   // First, change the ABI of every function in the module.  ABI-listed
   // functions keep their original ABI and get a wrapper function.
@@ -976,9 +973,7 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
         Function *NewF = Function::Create(NewFT, F.getLinkage(),
                                           F.getAddressSpace(), "", &M);
         NewF->copyAttributesFrom(&F);
-        NewF->removeAttributes(
-            AttributeList::ReturnIndex,
-            AttributeFuncs::typeIncompatible(NewFT->getReturnType()));
+        NewF->removeRetAttrs(AttributeFuncs::typeIncompatible(NewFT->getReturnType()));
         for (Function::arg_iterator FArg = F.arg_begin(),
                                     NewFArg = NewF->arg_begin(),
                                     FArgEnd = F.arg_end();
@@ -1023,7 +1018,7 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
           &F, std::string("dfsw$") + std::string(F.getName()), wrapperLinkage,
           NewFT);
       if (getInstrumentedABI() == IA_TLS)
-        NewF->removeAttributes(AttributeList::FunctionIndex, ReadOnlyNoneAttrs);
+        NewF->removeFnAttrs(ReadOnlyNoneAttrs);
 
       Value *WrappedFnCst =
           ConstantExpr::getBitCast(NewF, PointerType::getUnqual(FT));
@@ -1246,10 +1241,10 @@ Value *DFSanFunction::combineShadows(Value *V1, Value *V2, Instruction *Pos) {
         IRBuilder<> IRB(Pos);
         if (isa<ConstantInt>(Arg1) && V2 != DFS.ZeroShadow) { // Constant
           CallInst *Call = IRB.CreateCall(DFS.DFSanCombineAndFn, {V2});
-          Call->addAttribute(0, Attribute::ZExt);
+          Call->addParamAttr(0, Attribute::ZExt);
         } else if (isa<ConstantInt>(Arg2) && V1 != DFS.ZeroShadow) {
           CallInst *Call = IRB.CreateCall(DFS.DFSanCombineAndFn, {V1});
-          Call->addAttribute(0, Attribute::ZExt);
+          Call->addParamAttr(0, Attribute::ZExt);
         }
       }
     }
@@ -1276,9 +1271,9 @@ Value *DFSanFunction::combineShadows(Value *V1, Value *V2, Instruction *Pos) {
   if (is_signed) {
     IRBuilder<> IRB(Pos);
     CallInst *Call = IRB.CreateCall(DFS.DFSanMarkSignedFn, {V1, V2});
-    Call->addAttribute(AttributeList::ReturnIndex, Attribute::ZExt);
-    Call->addAttribute(0, Attribute::ZExt);
-    Call->addAttribute(1, Attribute::ZExt);
+    Call->addRetAttr(Attribute::ZExt);
+    Call->addParamAttr(0, Attribute::ZExt);
+    Call->addParamAttr(1, Attribute::ZExt);
   }
 
   switch (Pos->getOpcode()) {
@@ -1298,8 +1293,8 @@ Value *DFSanFunction::combineShadows(Value *V1, Value *V2, Instruction *Pos) {
     if (num_bytes > 0 && num_bits % 8 == 0) {
       Value *SizeArg = ConstantInt::get(DFS.ShadowTy, num_bytes);
       CallInst *Call = IRB.CreateCall(DFS.DFSanInferShapeFn, {V1, V2, SizeArg});
-      Call->addAttribute(1, Attribute::ZExt);
-      Call->addAttribute(2, Attribute::ZExt);
+      Call->addParamAttr(1, Attribute::ZExt);
+      Call->addParamAttr(2, Attribute::ZExt);
     }
     break;
   }
@@ -1347,7 +1342,7 @@ Value *DFSanFunction::combineShadows(Value *V1, Value *V2, Instruction *Pos) {
   IRBuilder<> IRB(Pos);
   if (AvoidNewBlocks) {
     CallInst *Call = IRB.CreateCall(DFS.DFSanCheckedUnionFn, {V1, V2});
-    Call->addAttribute(AttributeList::ReturnIndex, Attribute::ZExt);
+    Call->addRetAttr(Attribute::ZExt);
     Call->addParamAttr(0, Attribute::ZExt);
     Call->addParamAttr(1, Attribute::ZExt);
 
@@ -1360,7 +1355,7 @@ Value *DFSanFunction::combineShadows(Value *V1, Value *V2, Instruction *Pos) {
         Ne, Pos, /*Unreachable=*/false, DFS.ColdCallWeights, &DT));
     IRBuilder<> ThenIRB(BI);
     CallInst *Call = ThenIRB.CreateCall(DFS.DFSanUnionFn, {V1, V2});
-    Call->addAttribute(AttributeList::ReturnIndex, Attribute::ZExt);
+    Call->addRetAttr(Attribute::ZExt);
     Call->addParamAttr(0, Attribute::ZExt);
     Call->addParamAttr(1, Attribute::ZExt);
 
@@ -1402,9 +1397,9 @@ Value *DFSanFunction::combineOperandShadows(Instruction *Inst) {
     IRBuilder<> IRB(Inst);
     CallInst *Call =
         IRB.CreateCall(DFS.DFSanMarkSignedFn, {Shadow, DFS.ZeroShadow});
-    Call->addAttribute(AttributeList::ReturnIndex, Attribute::ZExt);
-    Call->addAttribute(0, Attribute::ZExt);
-    Call->addAttribute(1, Attribute::ZExt);
+    Call->addRetAttr(Attribute::ZExt);
+    Call->addParamAttr(0, Attribute::ZExt);
+    Call->addParamAttr(1, Attribute::ZExt);
   }
   for (unsigned i = 1, n = Inst->getNumOperands(); i != n; ++i) {
     Shadow = combineShadows(Shadow, getShadow(Inst->getOperand(i)), Inst);
@@ -1481,7 +1476,7 @@ Value *DFSanFunction::loadShadow(Value *Addr, uint64_t Size, uint64_t Align,
     CallInst *FallbackCall = FallbackIRB.CreateCall(
         DFS.DFSanUnionLoadFn,
         {ShadowAddr, ConstantInt::get(DFS.IntptrTy, Size)});
-    FallbackCall->addAttribute(AttributeList::ReturnIndex, Attribute::ZExt);
+    FallbackCall->addRetAttr(Attribute::ZExt);
 
     // Compare each of the shadows stored in the loaded 64 bits to each other,
     // by computing (WideShadow rotl ShadowWidthBits) == WideShadow.
@@ -1541,7 +1536,7 @@ Value *DFSanFunction::loadShadow(Value *Addr, uint64_t Size, uint64_t Align,
   IRBuilder<> IRB(Pos);
   CallInst *FallbackCall = IRB.CreateCall(
       DFS.DFSanUnionLoadFn, {ShadowAddr, ConstantInt::get(DFS.IntptrTy, Size)});
-  FallbackCall->addAttribute(AttributeList::ReturnIndex, Attribute::ZExt);
+  FallbackCall->addRetAttr(Attribute::ZExt);
   return FallbackCall;
 }
 
@@ -1839,8 +1834,7 @@ void DFSanVisitor::visitCallBase(CallBase &CB) {
           // Custom functions returning non-void will write to the return
           // label.
           if (!FT->getReturnType()->isVoidTy()) {
-            CustomFn->removeAttributes(AttributeList::FunctionIndex,
-                                       DFSF.DFS.ReadOnlyNoneAttrs);
+            CustomFn->removeFnAttrs(DFSF.DFS.ReadOnlyNoneAttrs);
           }
         }
 
@@ -1852,7 +1846,7 @@ void DFSanVisitor::visitCallBase(CallBase &CB) {
           FunctionType *ParamFT;
           if (isa<PointerType>(T) &&
               (ParamFT = dyn_cast<FunctionType>(
-                   cast<PointerType>(T)->getElementType()))) {
+                   cast<PointerType>(T)->getPointerElementType()))) {
             std::string TName = "dfst";
             TName += utostr(FT->getNumParams() - n);
             TName += "$";
@@ -1997,8 +1991,8 @@ void DFSanVisitor::visitCallBase(CallBase &CB) {
       NewCB = IRB.CreateCall(NewFT, Func, Args);
     }
     NewCB->setCallingConv(CB.getCallingConv());
-    NewCB->setAttributes(CB.getAttributes().removeAttributes(
-        *DFSF.DFS.Ctx, AttributeList::ReturnIndex,
+    NewCB->setAttributes(CB.getAttributes().removeRetAttributes(
+        *DFSF.DFS.Ctx,
         AttributeFuncs::typeIncompatible(NewCB->getType())));
 
     if (Next) {
