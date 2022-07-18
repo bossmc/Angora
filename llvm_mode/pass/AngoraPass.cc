@@ -363,7 +363,7 @@ void AngoraLLVMPass::countEdge(Module &M, BasicBlock &BB) {
 
   Value *BrId = IRB.CreateXor(PrevLocCasted, CurLoc);
   setValueNonSan(BrId);
-  Value *MapPtrIdx = IRB.CreateGEP(Int8PtrTy, MapPtr, BrId);
+  Value *MapPtrIdx = IRB.CreateGEP(Int8Ty, MapPtr, BrId);
   setValueNonSan(MapPtrIdx);
 
   // Increase 1 : IncRet <- Map[idx] + 1

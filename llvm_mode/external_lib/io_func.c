@@ -498,8 +498,6 @@ ssize_t __dfsw___getdelim(char **lineptr, size_t *n, int delim, FILE *fd,
   return ret;
 }
 
-// fscanf
-
 // int stat(const char *path, struct stat *buf);
 DEFAULT_VISIBILITY
 int __dfsw_stat(const char *path, struct stat *buf, dfsan_label path_label,
@@ -516,6 +514,7 @@ int __dfsw_stat(const char *path, struct stat *buf, dfsan_label path_label,
   return ret;
 }
 
+int __xstat(int ver, const char *path, struct stat *buf);
 DEFAULT_VISIBILITY
 int __dfsw___xstat(int vers, const char *path, struct stat *buf,
                    dfsan_label vers_label, dfsan_label path_label,
@@ -548,6 +547,7 @@ int __dfsw_fstat(int fd, struct stat *buf, dfsan_label fd_label,
   return ret;
 }
 
+int __fxstat(int ver, const int fd, struct stat *buf);
 DEFAULT_VISIBILITY
 int __dfsw___fxstat(int vers, const int fd, struct stat *buf,
                     dfsan_label vers_label, dfsan_label fd_label,
@@ -580,6 +580,7 @@ int __dfsw_lstat(const char *path, struct stat *buf, dfsan_label path_label,
   return ret;
 }
 
+int __lxstat(int ver, const char *path, struct stat *buf);
 DEFAULT_VISIBILITY
 int __dfsw___lxstat(int vers, const char *path, struct stat *buf,
                     dfsan_label vers_label, dfsan_label path_label,

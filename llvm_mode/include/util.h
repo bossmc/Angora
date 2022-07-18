@@ -18,8 +18,9 @@
     FunctionType *callee_obj##Ty =                                             \
         FunctionType::get(ret_ty, __VA_ARGS__, false);                         \
     AttributeList AL;                                                          \
-    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,  \
+    AL = AL.addAttribute(M.getContext(), AttributeList::FunctionIndex,         \
                          Attribute::NoUnwind);                                 \
+    AL = AL.addFnAttribute(M.getContext(), Attribute::NoUnwind);               \
     callee_obj = M.getOrInsertFunction(func_name, callee_obj##Ty, AL);         \
   }
 

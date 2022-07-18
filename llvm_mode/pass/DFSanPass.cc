@@ -785,12 +785,9 @@ Constant *DataFlowSanitizer::getOrBuildTrampolineFunction(FunctionType *FT,
 void DataFlowSanitizer::initializeRuntimeFunctions(Module &M) {
   {
     AttributeList AL;
-    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
-                         Attribute::NoUnwind);
-    // AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
-    //                      Attribute::ReadNone);
-    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::ReturnIndex,
-                         Attribute::ZExt);
+    AL = AL.addFnAttribute(M.getContext(), Attribute::NoUnwind);
+    // AL = AL.addFnAttribute(M.getContext(), Attribute::ReadNone);
+    AL = AL.addRetAttribute(M.getContext(), Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 0, Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 1, Attribute::ZExt);
     DFSanUnionFn =
@@ -798,12 +795,9 @@ void DataFlowSanitizer::initializeRuntimeFunctions(Module &M) {
   }
   {
     AttributeList AL;
-    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
-                         Attribute::NoUnwind);
-    // AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
-    //                     Attribute::ReadNone);
-    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::ReturnIndex,
-                         Attribute::ZExt);
+    AL = AL.addFnAttribute(M.getContext(), Attribute::NoUnwind);
+    // AL = AL.addFnAttribute(M.getContext(), Attribute::ReadNone);
+    AL = AL.addRetAttribute(M.getContext(), Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 0, Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 1, Attribute::ZExt);
     DFSanCheckedUnionFn =
@@ -811,12 +805,9 @@ void DataFlowSanitizer::initializeRuntimeFunctions(Module &M) {
   }
   {
     AttributeList AL;
-    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
-                         Attribute::NoUnwind);
-    // AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
-    //                      Attribute::ReadOnly);
-    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::ReturnIndex,
-                         Attribute::ZExt);
+    AL = AL.addFnAttribute(M.getContext(), Attribute::NoUnwind);
+    // AL = AL.addFnAttribute(M.getContext(), Attribute::ReadOnly);
+    AL = AL.addRetAttribute(M.getContext(), Attribute::ZExt);
     DFSanUnionLoadFn =
         Mod->getOrInsertFunction("__dfsan_union_load", DFSanUnionLoadFnTy, AL);
   }
@@ -879,8 +870,7 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
   initializeRuntimeFunctions(M);
   {
     AttributeList AL;
-    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
-                         Attribute::NoUnwind);
+    AL = AL.addFnAttribute(M.getContext(), Attribute::NoUnwind);
     AL = AL.addParamAttribute(M.getContext(), 0, Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 1, Attribute::ZExt);
     DFSanMarkSignedFn =
@@ -889,16 +879,14 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
   // find & ops.
   {
     AttributeList AL;
-    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
-                         Attribute::NoUnwind);
+    AL = AL.addFnAttribute(M.getContext(), Attribute::NoUnwind);
     // AL = AL.addParamAttribute(M.getContext(), 0, Attribute::ZExt);
     DFSanCombineAndFn = Mod->getOrInsertFunction("dfsan_combine_and_ins",
                                                  DFSanCombineAndFnTy, AL);
   }
   {
     AttributeList AL;
-    AL = AL.addAttributeAtIndex(M.getContext(), AttributeList::FunctionIndex,
-                         Attribute::NoUnwind);
+    AL = AL.addFnAttribute(M.getContext(), Attribute::NoUnwind);
     AL = AL.addParamAttribute(M.getContext(), 0, Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 1, Attribute::ZExt);
     AL = AL.addParamAttribute(M.getContext(), 2, Attribute::ZExt);
@@ -973,7 +961,8 @@ bool DataFlowSanitizer::runOnModule(Module &M) {
         Function *NewF = Function::Create(NewFT, F.getLinkage(),
                                           F.getAddressSpace(), "", &M);
         NewF->copyAttributesFrom(&F);
-        NewF->removeRetAttrs(AttributeFuncs::typeIncompatible(NewFT->getReturnType()));
+        NewF->removeRetAttrs(
+            AttributeFuncs::typeIncompatible(NewFT->getReturnType()));
         for (Function::arg_iterator FArg = F.arg_begin(),
                                     NewFArg = NewF->arg_begin(),
                                     FArgEnd = F.arg_end();
@@ -1992,8 +1981,7 @@ void DFSanVisitor::visitCallBase(CallBase &CB) {
     }
     NewCB->setCallingConv(CB.getCallingConv());
     NewCB->setAttributes(CB.getAttributes().removeRetAttributes(
-        *DFSF.DFS.Ctx,
-        AttributeFuncs::typeIncompatible(NewCB->getType())));
+        *DFSF.DFS.Ctx, AttributeFuncs::typeIncompatible(NewCB->getType())));
 
     if (Next) {
       ExtractValueInst *ExVal = ExtractValueInst::Create(NewCB, 0, "", Next);

@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 #===- lib/sanitizer_common/scripts/gen_dynamic_list.py ---------------------===#
 #
 #                     The LLVM Compiler Infrastructure
